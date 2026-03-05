@@ -28,8 +28,13 @@ To use this module in your own NixOS configuration, add this repository as an in
             domain = "my-site.example.com";
             zrok = {
               enable = true;
-              # Path to your .env file containing ZROK_TOKEN
+              # Option 1: Using an environment file (like .env)
               environmentFile = "/etc/nixos/secrets/zrok.env";
+              
+              # Option 2: Configuring directly via Nix options
+              # tokenFile = pkgs.writeText "zrok-token" "your-token-here";
+              # publicBase = "shares.zrok.io";
+              # instanceName = "my-custom-name";
             };
             services = {
               app = {
