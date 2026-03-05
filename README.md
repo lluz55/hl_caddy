@@ -14,7 +14,7 @@ To use this module in your own NixOS configuration, add this repository as an in
 {
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
-    hl-caddy.url = "github:username/hl-caddy"; # Replace with actual URL
+    hl-caddy.url = "github:lluz55/hl-caddy"; # Replace with actual URL
   };
 
   outputs = { self, nixpkgs, hl-caddy }: {
