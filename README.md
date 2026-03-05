@@ -26,13 +26,3 @@ This project provides a NixOS module that sets up a Caddy server to act as a rev
    cp .env.example .env
    ```
 2. Include the module in your NixOS configuration.
-
-## Development
-
-This repository includes a custom Gemini CLI skill to prevent accidental leaks of secrets.
-
-### Security Check Skill
-
-To use the security check:
-1. Load the skill in your Gemini CLI session: `/skills reload`.
-2. The skill will automatically check staged files for potential secrets during the commit process.
