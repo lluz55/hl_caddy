@@ -4,7 +4,7 @@ A NixOS configuration for a Caddy server integrated with a zrok tunnel.
 
 ## Description
 
-This project provides a NixOS module that sets up a Caddy server to act as a reverse proxy, combined with a zrok tunnel to expose local services securely.
+This project provides a NixOS module that sets up a local-only Caddy reverse proxy and exposes it externally through a zrok tunnel.
 
 ## Usage
 
@@ -25,14 +25,17 @@ To use this module in your own NixOS configuration, add this repository as an in
         ({ config, pkgs, ... }: {
           services.hl-caddy = {
             enable = true;
-            domain = "my-site.example.com";
+            listenAddress = "127.0.0.1";
+            listenPort = 80;
             zrok = {
-              enable = true;
               # Option 1: Using an environment file (like .env)
               environmentFile = "/etc/nixos/secrets/zrok.env";
               
               # Option 2: Configuring directly via Nix options
               # tokenFile = pkgs.writeText "zrok-token" "your-token-here";
+              # mode = "public";
+              # target = "http://127.0.0.1:80";
+              # extraArgs = [ "--headless" ];
               # publicBase = "shares.zrok.io";
               # instanceName = "my-custom-name";
             };
@@ -53,7 +56,8 @@ To use this module in your own NixOS configuration, add this repository as an in
 ## Features
 
 - **Caddy Reverse Proxy:** Easily configure multiple backend services.
-- **zrok Tunnel:** Automated integration for exposing services.
+- **zrok as External Ingress:** Public access happens through zrok.
+- **Tunnel via `.env` or Nix options:** Runtime env vars can override flake defaults.
 - **NixOS Module:** Purely functional and reproducible configuration.
 
 ## Getting Started

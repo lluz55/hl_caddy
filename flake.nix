@@ -11,17 +11,19 @@
         cfg = config.services.hl-caddy;
       in
       {
-        # Example .env file content:
-        # ZROK_TOKEN=your_token_here
-        # Other zrok env vars...
-
         options.services.hl-caddy = {
           enable = lib.mkEnableOption "HL-Caddy services";
-          
-          domain = lib.mkOption {
+
+          listenAddress = lib.mkOption {
             type = lib.types.str;
-            description = "The domain name for the Caddy server.";
-            default = "localhost";
+            description = "Internal bind address for Caddy. Keep this local so zrok is the external entrypoint.";
+            default = "127.0.0.1";
+          };
+
+          listenPort = lib.mkOption {
+            type = lib.types.port;
+            description = "Internal Caddy port used by the zrok tunnel target.";
+            default = 80;
           };
 
           services = lib.mkOption {
@@ -47,7 +49,11 @@
           };
 
           zrok = {
-            enable = lib.mkEnableOption "zrok tunnel";
+            enable = lib.mkOption {
+              type = lib.types.bool;
+              default = true;
+              description = "Enable zrok tunnel. This module expects zrok as the external ingress.";
+            };
             
             tokenFile = lib.mkOption {
               type = lib.types.nullOr lib.types.path;
@@ -61,10 +67,22 @@
               description = "Path to an environment file (.env) for zrok configuration.";
             };
 
-            shareArgs = lib.mkOption {
+            mode = lib.mkOption {
+              type = lib.types.enum [ "public" "private" ];
+              default = "public";
+              description = "zrok share mode.";
+            };
+
+            target = lib.mkOption {
               type = lib.types.str;
-              default = "public http://localhost:80 --headless";
-              description = "Arguments passed to 'zrok share'.";
+              default = "http://127.0.0.1:80";
+              description = "Tunnel target address, usually the local Caddy listener.";
+            };
+
+            extraArgs = lib.mkOption {
+              type = lib.types.listOf lib.types.str;
+              default = [ "--headless" ];
+              description = "Extra arguments passed to 'zrok share'.";
             };
 
             publicBase = lib.mkOption {
@@ -82,11 +100,18 @@
         };
 
         config = lib.mkIf cfg.enable {
+          assertions = [
+            {
+              assertion = cfg.zrok.enable;
+              message = "services.hl-caddy requires services.hl-caddy.zrok.enable = true because zrok is the external ingress.";
+            }
+          ];
+
           # Enable Caddy
           services.caddy = {
             enable = true;
-            # O Caddy no NixOS pode usar variáveis de ambiente definidas no systemd
-            virtualHosts."${cfg.domain}".extraConfig = (
+            # Caddy stays internal-only; zrok is the public entrypoint.
+            virtualHosts."http://${cfg.listenAddress}:${toString cfg.listenPort}".extraConfig = (
               lib.concatStringsSep "\n" (
                 lib.mapAttrsToList (name: service: 
                   let 
@@ -112,7 +137,7 @@
           };
 
           # Zrok Service Configuration
-          systemd.services.zrok-tunnel = lib.mkIf cfg.zrok.enable {
+          systemd.services.zrok-tunnel = {
             description = "zrok tunnel service";
             after = [ "network-online.target" "caddy.service" ];
             wants = [ "network-online.target" ];
@@ -134,7 +159,6 @@
               # Auto-enable if token is available
               ExecStartPre = pkgs.writeShellScript "zrok-init" ''
                 if [ ! -f /var/lib/zrok/environment.json ]; then
-                  # Export TUNNEL_ZROK_PUBLIC_BASE if set via nix option or already in env
                   export TUNNEL_ZROK_PUBLIC_BASE="''${TUNNEL_ZROK_PUBLIC_BASE:-${cfg.zrok.publicBase}}"
                   
                   TOKEN=""
@@ -156,15 +180,20 @@
               '';
 
               ExecStart = pkgs.writeShellScript "zrok-start" ''
-                # Use instance name if provided in env (from .env or nix option)
-                SHARE_OPTS="${cfg.zrok.shareArgs}"
-                if [ -n "$TUNNEL_ZROK_INSTANCE_NAME" ]; then
-                  # Check if --name is already in shareArgs to avoid duplication
-                  if [[ ! "$SHARE_OPTS" =~ "--name" ]]; then
-                    SHARE_OPTS="$SHARE_OPTS --name $TUNNEL_ZROK_INSTANCE_NAME"
-                  fi
+                SHARE_MODE="''${TUNNEL_ZROK_MODE:-${cfg.zrok.mode}}"
+                SHARE_TARGET="''${TUNNEL_ZROK_TARGET:-${cfg.zrok.target}}"
+                EXTRA_ARGS="${lib.escapeShellArgs cfg.zrok.extraArgs}"
+
+                if [ -n "$TUNNEL_ZROK_EXTRA_ARGS" ]; then
+                  EXTRA_ARGS="$TUNNEL_ZROK_EXTRA_ARGS"
                 fi
-                exec ${pkgs.zrok}/bin/zrok share $SHARE_OPTS
+
+                if [ -n "$TUNNEL_ZROK_INSTANCE_NAME" ] && [[ "$EXTRA_ARGS" != *"--name"* ]]; then
+                  EXTRA_ARGS="$EXTRA_ARGS --name $TUNNEL_ZROK_INSTANCE_NAME"
+                fi
+
+                # shellcheck disable=SC2086
+                exec ${pkgs.zrok}/bin/zrok share "$SHARE_MODE" "$SHARE_TARGET" $EXTRA_ARGS
               '';
               Restart = "on-failure";
               RestartSec = "10s";
